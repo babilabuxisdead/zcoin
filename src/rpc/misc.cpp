@@ -457,6 +457,50 @@ UniValue signmessagewithprivkey(const UniValue& params, bool fHelp)
     return EncodeBase64(&vchSig[0], vchSig.size());
 }
 
+UniValue sendrawdata(const UniValue& params, bool fHelp)
+{
+    if (fHelp || params.size() != 1) {
+        throw std::runtime_error("sendrawdata \"hexstring\"");
+    }
+
+    if (!pwalletMain) {
+        throw JSONRPCError(RPC_WALLET_ERROR, "Wallet is not enabled");
+    }
+
+    // decode data
+    auto data = ParseHex(params[0].get_str());
+
+    if (!data.size()) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Data is empty");
+    } else if (data.size() > MAX_OP_RETURN_RELAY) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Data too large");
+    }
+
+    // create script
+    CRecipient recipient;
+
+    recipient.scriptPubKey << OP_RETURN << data;
+    recipient.nAmount = 0;
+    recipient.fSubtractFeeFromAmount = false;
+
+    // create and send transaction
+    CWalletTx tx;
+    CReserveKey rk(pwalletMain);
+    CAmount fee = 0;
+    int pchanges = -1;
+    std::string err;
+
+    if (!pwalletMain->CreateTransaction({ recipient }, tx, rk, fee, pchanges, err)) {
+        throw JSONRPCError(RPC_TRANSACTION_ERROR, "Failed to create transaction: " + err);
+    }
+
+    if (!pwalletMain->CommitTransaction(tx, rk)) {
+        throw JSONRPCError(RPC_TRANSACTION_ERROR, "Failed to commit transaction");
+    }
+
+    return tx.GetHash().GetHex();
+}
+
 UniValue setmocktime(const UniValue& params, bool fHelp)
 {
     if (fHelp || params.size() != 1)
@@ -967,6 +1011,7 @@ static const CRPCCommand commands[] =
     { "util",               "createmultisig",         &createmultisig,         true  },
     { "util",               "verifymessage",          &verifymessage,          true  },
     { "util",               "signmessagewithprivkey", &signmessagewithprivkey, true  },
+    { "util",               "sendrawdata",            &sendrawdata,            true  },
 
         /* Address index */
     { "addressindex",       "getaddressmempool",      &getaddressmempool,      true  },
